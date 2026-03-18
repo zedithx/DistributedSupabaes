@@ -14,7 +14,7 @@ import (
 
 func RunStatus(args []string) error {
 	fs := flag.NewFlagSet("cluster status", flag.ContinueOnError)
-	addr := fs.String("addr", "http://127.0.0.1:8080", "node address")
+	addr := fs.String("addr", "http://127.0.0.1:8090", "node or control-plane gateway address")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -28,7 +28,7 @@ func RunStatus(args []string) error {
 
 func RunPut(args []string) error {
 	fs := flag.NewFlagSet("put", flag.ContinueOnError)
-	addr := fs.String("addr", "http://127.0.0.1:8080", "node address")
+	addr := fs.String("addr", "http://127.0.0.1:8090", "node or control-plane gateway address")
 	key := fs.String("key", "", "key to write")
 	value := fs.String("value", "", "value to write")
 	if err := fs.Parse(args); err != nil {
@@ -49,7 +49,7 @@ func RunPut(args []string) error {
 
 func RunGet(args []string) error {
 	fs := flag.NewFlagSet("get", flag.ContinueOnError)
-	addr := fs.String("addr", "http://127.0.0.1:8080", "node address")
+	addr := fs.String("addr", "http://127.0.0.1:8090", "node or control-plane gateway address")
 	key := fs.String("key", "", "key to read")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -67,7 +67,7 @@ func RunGet(args []string) error {
 
 func RunLockAcquire(args []string) error {
 	fs := flag.NewFlagSet("lock acquire", flag.ContinueOnError)
-	addr := fs.String("addr", "http://127.0.0.1:8080", "node address")
+	addr := fs.String("addr", "http://127.0.0.1:8090", "node or control-plane gateway address")
 	name := fs.String("name", "maintenance", "lease name")
 	owner := fs.String("owner", "operator", "lease owner label")
 	ttl := fs.Duration("ttl", 30*time.Second, "lease TTL")
@@ -88,7 +88,7 @@ func RunLockAcquire(args []string) error {
 
 func RunLockRelease(args []string) error {
 	fs := flag.NewFlagSet("lock release", flag.ContinueOnError)
-	addr := fs.String("addr", "http://127.0.0.1:8080", "node address")
+	addr := fs.String("addr", "http://127.0.0.1:8090", "node or control-plane gateway address")
 	name := fs.String("name", "maintenance", "lease name")
 	owner := fs.String("owner", "operator", "lease owner label")
 	if err := fs.Parse(args); err != nil {

@@ -1,4 +1,22 @@
 services:
+  control-plane:
+    build: .
+    depends_on:
+      - node1
+      - node2
+      - node3
+    command:
+      [
+        "control-plane",
+        "serve",
+        "--listen-addr",
+        ":8090",
+        "--targets",
+        "http://node1:8080,http://node2:8080,http://node3:8080"
+      ]
+    ports:
+      - "8090:8090"
+
   node1:
     build: .
     command:

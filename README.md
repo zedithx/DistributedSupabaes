@@ -10,6 +10,7 @@ Each node runs the same Go binary and exposes:
 - a public API for distributed lease acquisition/release
 - an internal cluster API for join, heartbeat, election, append, and sync
 - a web dashboard for debugging and demos
+- an optional immortal control-plane gateway for one stable entrypoint
 
 The system is intentionally small so the distributed behavior stays visible and explainable.
 
@@ -45,7 +46,8 @@ The implementation is split into four layers:
 
 4. Visibility layer
 - Each node serves a dashboard at `/dashboard`.
-- The dashboard polls `/api/v1/status` once per second.
+- The dashboard polls `/api/v1/control-plane` once per second.
+- Any node can serve the page, but it prefers the leader's cluster snapshot so the UI acts like one canonical control plane.
 - It visualizes:
   - membership
   - leader identity
@@ -116,6 +118,7 @@ That keeps the implementation achievable while still demonstrating real distribu
 
 - `GET /health`
 - `GET /api/v1/status`
+- `GET /api/v1/control-plane`
 - `PUT /api/v1/kv/{key}`
 - `GET /api/v1/kv/{key}`
 - `POST /api/v1/lock/acquire`
@@ -135,10 +138,16 @@ That keeps the implementation achievable while still demonstrating real distribu
 
 ### Directly with Go
 
+Build the binary once:
+
+```bash
+GOCACHE=$(pwd)/.gocache go build -o supaswarm ./cmd/supaswarm
+```
+
 Start the first node:
 
 ```bash
-go run ./cmd/supaswarm cluster init \
+./supaswarm cluster init \
   --node-id 1 \
   --listen-addr :8080 \
   --advertise-addr http://127.0.0.1:8080 \
@@ -150,7 +159,7 @@ go run ./cmd/supaswarm cluster init \
 Start follower nodes in separate terminals:
 
 ```bash
-go run ./cmd/supaswarm node join \
+./supaswarm node join \
   --node-id 2 \
   --listen-addr :8081 \
   --advertise-addr http://127.0.0.1:8081 \
@@ -161,7 +170,7 @@ go run ./cmd/supaswarm node join \
 ```
 
 ```bash
-go run ./cmd/supaswarm node join \
+./supaswarm node join \
   --node-id 3 \
   --listen-addr :8082 \
   --advertise-addr http://127.0.0.1:8082 \
@@ -171,35 +180,49 @@ go run ./cmd/supaswarm node join \
   --data-dir data/node-3
 ```
 
+Start the immortal control-plane gateway in a fourth terminal:
+
+```bash
+./supaswarm control-plane serve \
+  --listen-addr :8090 \
+  --targets http://127.0.0.1:8080,http://127.0.0.1:8081,http://127.0.0.1:8082
+```
+
 Send a write:
 
 ```bash
-go run ./cmd/supaswarm put --addr http://127.0.0.1:8081 --key project --value supaswarm
+./supaswarm put --addr http://127.0.0.1:8090 --key project --value supaswarm
 ```
 
 Read a value:
 
 ```bash
-go run ./cmd/supaswarm get --addr http://127.0.0.1:8082 --key project
+./supaswarm get --addr http://127.0.0.1:8090 --key project
 ```
 
 Inspect cluster status:
 
 ```bash
-go run ./cmd/supaswarm cluster status --addr http://127.0.0.1:8080
+./supaswarm cluster status --addr http://127.0.0.1:8090
 ```
 
 Acquire the distributed lease:
 
 ```bash
-go run ./cmd/supaswarm lock acquire --addr http://127.0.0.1:8080 --name maintenance --owner reporter --ttl 30s
+./supaswarm lock acquire --addr http://127.0.0.1:8090 --name maintenance --owner reporter --ttl 30s
 ```
 
-Open the dashboard:
+Open the immortal dashboard:
+
+- [control-plane dashboard](http://127.0.0.1:8090/dashboard)
+
+Optional direct node views:
 
 - [node1 dashboard](http://127.0.0.1:8080/dashboard)
 - [node2 dashboard](http://127.0.0.1:8081/dashboard)
 - [node3 dashboard](http://127.0.0.1:8082/dashboard)
+
+The immortal dashboard is a lightweight gateway. It keeps one stable URL and forwards requests to any healthy node. Started nodes are still discovered from the cluster membership table maintained by `join` and `heartbeat` events, and each node's dashboard/control-plane endpoint still prefers the leader's snapshot so the displayed view stays canonical.
 
 ### With Docker Compose
 
@@ -209,7 +232,11 @@ Build and run the 3-node cluster:
 docker compose up --build
 ```
 
-The demo cluster will be available at:
+The immortal control-plane URL will be available at:
+
+- [control-plane](http://127.0.0.1:8090/dashboard)
+
+Direct node URLs remain available for debugging:
 
 - [node1](http://127.0.0.1:8081/dashboard)
 - [node2](http://127.0.0.1:8082/dashboard)
@@ -224,6 +251,8 @@ The automated tests cover:
 - follower rejoin and catch-up using leader sync
 - leader failover using Bully election
 - lease exclusivity and release
+- control-plane gateway fallback to a healthy target
+- blocking internal cluster endpoints from the gateway
 
 Run the tests with:
 

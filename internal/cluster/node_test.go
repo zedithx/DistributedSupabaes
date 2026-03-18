@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 )
@@ -204,6 +205,63 @@ func TestLeaderFailoverAndLeaseExclusivity(t *testing.T) {
 	}
 	if !thirdLease.Granted {
 		t.Fatalf("expected lease acquisition after release to succeed: %#v", thirdLease)
+	}
+}
+
+func TestFollowerControlPlaneUsesLeaderView(t *testing.T) {
+	clusterID := "test-cluster"
+	token := "secret-token"
+
+	node1, shutdownNode1 := startTestNode(t, Config{
+		NodeID:            1,
+		ListenAddr:        "127.0.0.1:0",
+		DataDir:           t.TempDir(),
+		ClusterID:         clusterID,
+		JoinToken:         token,
+		HeartbeatInterval: 100 * time.Millisecond,
+		ElectionTimeout:   450 * time.Millisecond,
+		JoinRetryInterval: 100 * time.Millisecond,
+	}, true)
+	defer shutdownNode1()
+
+	node2, shutdownNode2 := startTestNode(t, Config{
+		NodeID:            2,
+		ListenAddr:        "127.0.0.1:0",
+		DataDir:           t.TempDir(),
+		ClusterID:         clusterID,
+		JoinToken:         token,
+		ManagerAddr:       node1.AdvertiseAddr(),
+		HeartbeatInterval: 100 * time.Millisecond,
+		ElectionTimeout:   450 * time.Millisecond,
+		JoinRetryInterval: 100 * time.Millisecond,
+	}, false)
+	defer shutdownNode2()
+
+	waitFor(t, 3*time.Second, func() bool {
+		return len(node1.StatusSnapshot().Members) == 2 && len(node2.StatusSnapshot().Members) == 2
+	}, "both nodes to observe membership")
+
+	if _, err := node1.ApplyWrite("canonical", "view"); err != nil {
+		t.Fatalf("apply write: %v", err)
+	}
+
+	waitFor(t, 3*time.Second, func() bool {
+		return node2.StatusSnapshot().Data["canonical"] == "view"
+	}, "follower to catch up before querying control plane")
+
+	var control ControlPlaneResponse
+	if err := requestJSON(http.MethodGet, joinURL(node2.AdvertiseAddr(), "/api/v1/control-plane"), nil, &control); err != nil {
+		t.Fatalf("fetch control plane from follower: %v", err)
+	}
+
+	if !control.ServedByLeader {
+		t.Fatalf("expected follower control plane to serve leader view: %#v", control)
+	}
+	if control.SourceNodeID != node1.cfg.NodeID {
+		t.Fatalf("expected control plane source node %d, got %d", node1.cfg.NodeID, control.SourceNodeID)
+	}
+	if control.Data["canonical"] != "view" {
+		t.Fatalf("expected canonical data to be visible through leader view: %#v", control.Data)
 	}
 }
 

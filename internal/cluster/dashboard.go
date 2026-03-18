@@ -81,6 +81,11 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
     }
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
     .stat {
       background: var(--panel-2);
       border: 1px solid var(--line);
@@ -146,13 +151,35 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
     .muted {
       color: var(--muted);
     }
+    .member-links {
+      display: grid;
+      gap: 10px;
+    }
+    .member-link {
+      display: block;
+      text-decoration: none;
+      color: var(--text);
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+    }
+    .member-link small {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+    }
   </style>
 </head>
 <body>
   <main>
     <section class="hero">
       <h1>SupaSwarm Control Plane</h1>
-      <p>A live view of cluster membership, leader election, Lamport time, replicated log progress, and distributed lease ownership. Refreshes automatically every second for demo and debugging.</p>
+      <p>A single control-plane view of cluster membership, leader election, Lamport time, replicated log progress, and distributed lease ownership. Any node can serve this page, but it will prefer the leader's membership view so the dashboard stays canonical.</p>
+      <div class="hero-meta">
+        <span class="pill" id="controlPlaneSource">Discovering control plane...</span>
+        <span class="pill warn" id="controlPlaneMode">Waiting for cluster membership...</span>
+      </div>
     </section>
 
     <section class="grid">
@@ -160,7 +187,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         <h2>Cluster Snapshot</h2>
         <div class="stats">
           <div class="stat">
-            <div class="label">Node</div>
+            <div class="label">Source Node</div>
             <div class="value" id="nodeId">-</div>
           </div>
           <div class="stat">
@@ -193,6 +220,13 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
     </section>
 
     <section class="grid" style="margin-top: 16px;">
+      <article class="card">
+        <h2>Discovered Nodes</h2>
+        <div id="memberLinks" class="member-links">
+          <span class="muted">No nodes discovered yet.</span>
+        </div>
+      </article>
+
       <article class="card">
         <h2>Membership</h2>
         <table>
@@ -235,20 +269,36 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
       return "pill warn";
     }
 
+    function htmlEscape(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
     async function refresh() {
-      const response = await fetch("/api/v1/status");
+      const response = await fetch("/api/v1/control-plane");
       const data = await response.json();
 
-      document.getElementById("nodeId").textContent = safe(data.nodeId);
+      document.getElementById("nodeId").textContent = safe(data.sourceNodeId);
       document.getElementById("leaderId").textContent = safe(data.leaderId);
       document.getElementById("term").textContent = safe(data.currentTerm);
       document.getElementById("lamport").textContent = safe(data.lamport);
       document.getElementById("commitIndex").textContent = safe(data.commitIndex);
       document.getElementById("lastLogIndex").textContent = safe(data.lastLogIndex);
+      document.getElementById("controlPlaneSource").textContent =
+        "Control plane source: node " + safe(data.sourceNodeId) + " (" + safe(data.sourceAdvertiseAddr) + ")";
+      document.getElementById("controlPlaneMode").textContent = data.degraded
+        ? "Degraded: leader unreachable, showing local cluster view"
+        : (data.servedByLeader
+          ? "Canonical leader view discovered from membership"
+          : "Local view");
 
       const lease = data.lease;
       document.getElementById("leasePanel").innerHTML = lease
-        ? '<div class="pill">owner=' + safe(lease.owner) + ' name=' + safe(lease.name) + ' expires=' + safe(lease.expiresAt) + '</div>'
+        ? '<div class="pill">owner=' + safe(lease.owner) + ' name=' + safe(lease.name) + ' expires=' + safe(lease.expiresAt) + '</div><div class="muted" style="margin-top:10px;">Lease discovery flows through the replicated membership/log state.</div>'
         : '<span class="muted">No active lease.</span>';
 
       const tbody = document.getElementById("membersBody");
@@ -263,6 +313,22 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
           "<td>" + safe(member.lastCommitted) + "</td>";
         tbody.appendChild(tr);
       });
+
+      const memberLinks = document.getElementById("memberLinks");
+      memberLinks.innerHTML = "";
+      (data.members || []).forEach(member => {
+        const card = document.createElement("div");
+        card.className = "member-link";
+        card.innerHTML =
+          '<strong>Node ' + safe(member.id) + '</strong>' +
+          ' <span class="' + pillForStatus(member.status) + '">' + safe(member.status) + "</span>" +
+          '<small>Discovered from cluster membership: ' + htmlEscape(safe(member.address)) + "</small>" +
+          '<small>Last committed index: ' + htmlEscape(safe(member.lastCommitted)) + '</small>';
+        memberLinks.appendChild(card);
+      });
+      if ((data.members || []).length === 0) {
+        memberLinks.innerHTML = '<span class="muted">No nodes discovered yet.</span>';
+      }
 
       document.getElementById("dataState").textContent = JSON.stringify(data.data || {}, null, 2);
       document.getElementById("logState").textContent = JSON.stringify(data.log || [], null, 2);

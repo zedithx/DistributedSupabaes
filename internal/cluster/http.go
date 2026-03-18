@@ -19,6 +19,7 @@ func (n *Node) routes() http.Handler {
 	mux.HandleFunc("/health", n.handleHealth)
 
 	mux.HandleFunc("/api/v1/status", n.handleStatus)
+	mux.HandleFunc("/api/v1/control-plane", n.handleControlPlane)
 	mux.HandleFunc("/api/v1/kv/", n.handleKV)
 	mux.HandleFunc("/api/v1/lock/acquire", n.handleLockAcquire)
 	mux.HandleFunc("/api/v1/lock/release", n.handleLockRelease)
@@ -52,6 +53,14 @@ func (n *Node) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, n.StatusSnapshot())
+}
+
+func (n *Node) handleControlPlane(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	writeJSON(w, http.StatusOK, n.ControlPlaneSnapshot(r.Context()))
 }
 
 func (n *Node) handleKV(w http.ResponseWriter, r *http.Request) {

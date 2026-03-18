@@ -198,3 +198,12 @@ type StatusResponse struct {
 	Lease         *LeaseState       `json:"lease"`
 	Log           []LogEntry        `json:"log"`
 }
+
+type ControlPlaneResponse struct {
+	StatusResponse
+	SourceNodeID        int    `json:"sourceNodeId"`
+	SourceAdvertiseAddr string `json:"sourceAdvertiseAddr"`
+	ServedByLeader      bool   `json:"servedByLeader"`
+	Degraded            bool   `json:"degraded"`
+	DiscoveryMethod     string `json:"discoveryMethod"`
+}

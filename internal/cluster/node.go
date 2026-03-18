@@ -305,6 +305,47 @@ func (n *Node) StatusSnapshot() StatusResponse {
 	}
 }
 
+func (n *Node) ControlPlaneSnapshot(ctx context.Context) ControlPlaneResponse {
+	local := n.StatusSnapshot()
+
+	n.mu.RLock()
+	leaderAddr := n.leaderAddressLocked()
+	selfAddr := n.cfg.AdvertiseAddr
+	n.mu.RUnlock()
+
+	if leaderAddr == "" || local.IsLeader || leaderAddr == selfAddr {
+		return ControlPlaneResponse{
+			StatusResponse:      local,
+			SourceNodeID:        local.NodeID,
+			SourceAdvertiseAddr: local.AdvertiseAddr,
+			ServedByLeader:      local.IsLeader || leaderAddr == "" || leaderAddr == selfAddr,
+			Degraded:            false,
+			DiscoveryMethod:     "cluster membership table maintained by heartbeats and join events",
+		}
+	}
+
+	leaderStatus, err := n.fetchRemoteStatus(ctx, leaderAddr)
+	if err != nil {
+		return ControlPlaneResponse{
+			StatusResponse:      local,
+			SourceNodeID:        local.NodeID,
+			SourceAdvertiseAddr: local.AdvertiseAddr,
+			ServedByLeader:      false,
+			Degraded:            true,
+			DiscoveryMethod:     "cluster membership table maintained by heartbeats and join events",
+		}
+	}
+
+	return ControlPlaneResponse{
+		StatusResponse:      leaderStatus,
+		SourceNodeID:        leaderStatus.NodeID,
+		SourceAdvertiseAddr: leaderStatus.AdvertiseAddr,
+		ServedByLeader:      true,
+		Degraded:            false,
+		DiscoveryMethod:     "cluster membership table maintained by heartbeats and join events",
+	}
+}
+
 func (n *Node) heartbeatLoop() {
 	ticker := time.NewTicker(n.cfg.HeartbeatInterval)
 	defer ticker.Stop()
@@ -877,6 +918,30 @@ func (n *Node) postJSON(ctx context.Context, target string, reqBody any, out any
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func (n *Node) fetchRemoteStatus(ctx context.Context, targetBase string) (StatusResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, joinURL(targetBase, "/api/v1/status"), nil)
+	if err != nil {
+		return StatusResponse{}, fmt.Errorf("new status request: %w", err)
+	}
+
+	resp, err := n.client.Do(req)
+	if err != nil {
+		return StatusResponse{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
+		return StatusResponse{}, fmt.Errorf("status request failed with %s: %s", resp.Status, string(body))
+	}
+
+	var status StatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return StatusResponse{}, fmt.Errorf("decode status response: %w", err)
+	}
+	return status, nil
 }
 
 func (n *Node) statePath() string {
