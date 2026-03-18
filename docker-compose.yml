@@ -1,0 +1,85 @@
+services:
+  node1:
+    build: .
+    command:
+      [
+        "cluster",
+        "init",
+        "--node-id",
+        "1",
+        "--listen-addr",
+        ":8080",
+        "--advertise-addr",
+        "http://node1:8080",
+        "--cluster-id",
+        "demo-cluster",
+        "--join-token",
+        "demo-secret",
+        "--data-dir",
+        "/data/node1"
+      ]
+    ports:
+      - "8081:8080"
+    volumes:
+      - node1-data:/data/node1
+
+  node2:
+    build: .
+    depends_on:
+      - node1
+    command:
+      [
+        "node",
+        "join",
+        "--node-id",
+        "2",
+        "--listen-addr",
+        ":8080",
+        "--advertise-addr",
+        "http://node2:8080",
+        "--cluster-id",
+        "demo-cluster",
+        "--join-token",
+        "demo-secret",
+        "--manager",
+        "http://node1:8080",
+        "--data-dir",
+        "/data/node2"
+      ]
+    ports:
+      - "8082:8080"
+    volumes:
+      - node2-data:/data/node2
+
+  node3:
+    build: .
+    depends_on:
+      - node1
+    command:
+      [
+        "node",
+        "join",
+        "--node-id",
+        "3",
+        "--listen-addr",
+        ":8080",
+        "--advertise-addr",
+        "http://node3:8080",
+        "--cluster-id",
+        "demo-cluster",
+        "--join-token",
+        "demo-secret",
+        "--manager",
+        "http://node1:8080",
+        "--data-dir",
+        "/data/node3"
+      ]
+    ports:
+      - "8083:8080"
+    volumes:
+      - node3-data:/data/node3
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:
