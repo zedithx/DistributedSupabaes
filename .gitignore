@@ -1,3 +1,4 @@
 .gocache/
 data/
-supaswarm
+/supaswarm
+.DS_Store
